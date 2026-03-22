@@ -187,3 +187,134 @@ src/
 build.rs       ← DLL linker flags, Windows version resource embedding
 Cargo.toml     ← Plugin name, version, libskyrim dependency + features
 ```
+
+---
+
+## Hooks
+
+Install hooks inside the `SKSE_DATA_LOADED` handler — at that point all game
+data and vtables are fully initialized and safe to patch.
+
+```rust
+fn on_skse_message(msg: &Message) {
+    match msg.msg_type {
+        Message::SKSE_DATA_LOADED => {
+            hooks::install_hooks();
+        }
+        _ => {}
+    }
+}
+```
+
+---
+
+### VTable Hook
+
+Replaces a virtual function in a class vtable. The original function is saved
+and can be called via `original(...)`.
+
+```rust
+use libskyrim::re::character::Character;
+use libskyrim::re::player_character::PlayerCharacter;
+use libskyrim::{skse_message, define_vtable_hook};
+use libskyrim::trampoline::alloc_trampoline;
+
+define_vtable_hook! {
+    pub NpcUpdateHook {
+        vtable: Character::VTABLE,
+        offset: Character::VFUNC_UPDATE_IDX,
+        fn hook(this: *mut Character, delta: f32) {
+            skse_message!("NPC update, delta: {}", delta);
+            original(this, delta); // call original — always do this unless intentionally blocking
+        }
+    }
+}
+
+define_vtable_hook! {
+    pub PlayerUpdateHook {
+        vtable: PlayerCharacter::VTABLE,
+        offset: PlayerCharacter::VFUNC_UPDATE_IDX,
+        fn hook(this: *mut PlayerCharacter, delta: f32) {
+            skse_message!("Player update, delta: {}", delta);
+            original(this, delta);
+        }
+    }
+}
+
+pub fn install_hooks() {
+    alloc_trampoline(128); // allocate trampoline memory before installing hooks
+    NpcUpdateHook::install();
+    PlayerUpdateHook::install();
+}
+```
+
+**`define_vtable_hook!` parameters:**
+
+| Parameter | Description |
+|---|---|
+| `vtable` | VTable address — `SomeClass::VTABLE[0]` (index 0 = primary vtable) |
+| `offset` | Virtual function index — `SomeClass::VFUNC_NAME_IDX` constant |
+| `fn hook(...)` | Your hook function — signature must match the original exactly |
+| `original(...)` | Calls the original function saved before patching |
+
+---
+
+### Call Hook (Trampoline)
+
+Patches a `CALL` instruction inside an existing function at a specific offset.
+Use when you need to intercept a specific call site, not the whole virtual method.
+
+```rust
+use libskyrim::{skse_message, define_call_hook};
+use libskyrim::relocation::VariantID;
+use libskyrim::trampoline::alloc_trampoline;
+
+define_call_hook! {
+    pub MyCallHook {
+        address: VariantID::new(37633, 38586, 0), // SE id, AE id, VR id
+        offset: 0x3A,                              // byte offset of the CALL instruction
+        size: 5,                                   // 5 = short CALL, 6 = long CALL
+        fn hook(arg1: *mut SomeType, arg2: u32) -> bool {
+            skse_message!("Call hook fired");
+            original(arg1, arg2) // call original at hook site
+        }
+    }
+}
+
+pub fn install_hooks() {
+    alloc_trampoline(64);
+    MyCallHook::install();
+}
+```
+
+**`define_call_hook!` parameters:**
+
+| Parameter | Description |
+|---|---|
+| `address` | `VariantID` of the **containing function** (not the call target) |
+| `offset` | Byte offset of the `CALL` instruction within that function |
+| `size` | `5` for a standard near call, `6` for a call with REX prefix |
+| `fn hook(...)` | Your hook — signature must match the called function exactly |
+
+---
+
+### `alloc_trampoline(size)`
+
+Must be called **once** before any `install()` calls. Allocates a memory region
+near the game executable for trampoline stubs used by call/branch hooks.
+
+```rust
+alloc_trampoline(128); // size in bytes — 64–256 is typical
+```
+
+VTable hooks do not use the trampoline, but calling `alloc_trampoline` before
+all hooks is the safe convention.
+
+---
+
+### Hook Types Summary
+
+| Macro | Use case |
+|---|---|
+| `define_vtable_hook!` | Override a virtual method for all instances of a class |
+| `define_call_hook!` | Intercept a specific `CALL` instruction inside a function |
