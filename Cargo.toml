@@ -11,7 +11,7 @@ name       = "RustSKSETemplate"
 crate-type = ["cdylib"]
 
 [dependencies]
-libskyrim = { git = "https://github.com/Newrite/CommonLib-SkyrimLib.git", branch = "CommonLib-LibSkyrim" }
+libskyrim = { git = "https://github.com/Newrite/CommonLib-SkyrimLib.git", branch = "CommonLib-LibSkyrim", features = ["se", "ae"] }
 
 [build-dependencies]
 winresource = "0.1.31"
