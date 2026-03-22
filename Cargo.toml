@@ -1,0 +1,27 @@
+[package]
+name        = "RustSKSETemplate"
+version     = "0.1.0"
+edition     = "2021"
+authors     = ["Name"]
+description = "Some mode desc"
+
+
+[lib]
+name       = "RustSKSETemplate"
+crate-type = ["cdylib"]
+
+[dependencies]
+libskyrim = { git = "https://github.com/Newrite/CommonLib-SkyrimLib.git", branch = "CommonLib-LibSkyrim" }
+
+[build-dependencies]
+winresource = "0.1.31"
+
+[profile.release]
+panic         = "abort"
+lto           = "fat"
+codegen-units = 1
+opt-level     = "z"
+strip         = true
+
+[profile.dev]
+panic         = "abort"
