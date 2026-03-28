@@ -2,7 +2,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use libskyrim::re::{Actor, HitData, InventoryEntryData, PlayerCharacter, TESBoundObject, TESForm};
 use libskyrim::relocation::{RelocationID, VariantOffset, skyrim_cast_mut};
-use libskyrim::sdk::hooks::{self, GameRef, Original};
+use libskyrim::sdk::hooks::{self, Original, Resolved};
 use libskyrim::sdk::plugin;
 use libskyrim::{skse_error, skse_message};
 
@@ -19,7 +19,11 @@ fn weapon_hit(
     target: &Actor,
     hit_data: &mut HitData,
 ) {
-    skse_message!("Total Damage {} to Actor {}", hit_data.total_damage, target.get_name_as_str());
+    skse_message!(
+        "Total Damage {} to Actor {:p}",
+        hit_data.total_damage,
+        target.get_display_full_name()
+    );
     original.call(target, hit_data);
 }
 
@@ -30,13 +34,11 @@ fn weapon_hit(
     guard = hooks::guards::original()
 )]
 fn apply_attack_spells_call(
-    original: Original<
-        fn(GameRef<'_, Actor>, Option<&mut InventoryEntryData>, bool, GameRef<'_, Actor>),
-    >,
-    actor: GameRef<'_, Actor>,
+    original: Original<fn(Resolved<Actor>, Option<&mut InventoryEntryData>, bool, Resolved<Actor>)>,
+    actor: Resolved<Actor>,
     entry_data: Option<&mut InventoryEntryData>,
     is_left: bool,
-    target: GameRef<'_, Actor>,
+    target: Resolved<Actor>,
 ) {
     if let Some(entry_data) = entry_data {
         original.call(actor, Some(entry_data), is_left, target);

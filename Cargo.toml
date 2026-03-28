@@ -10,10 +10,6 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[features]
-default = []
-example-hooks = []
-
 [dependencies]
 libskyrim = { git = "https://github.com/Newrite/CommonLib-SkyrimLib.git", branch = "CommonLib-LibSkyrim", features = [
     "se",

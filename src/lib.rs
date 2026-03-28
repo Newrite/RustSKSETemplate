@@ -54,7 +54,7 @@ fn register_lifecycle() {
         plugin::add_task(|| {
             skse_message!("Background task example ran on the SKSE task queue");
         });
-        
+
         sample_hooks::install();
     });
 

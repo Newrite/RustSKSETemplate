@@ -15,7 +15,7 @@ By default the template stays minimal and safe:
 - it initializes `libskyrim`
 - registers lifecycle callbacks
 - registers a working serialization model
-- does not install risky sample hooks unless you opt into the `example-hooks` feature
+- keeps sample hooks in `src/sample_hooks.rs` as reference code, but does not install them automatically
 
 ---
 
@@ -76,9 +76,9 @@ If you add real hook targets, make sure their relocation IDs and offsets are val
 src/
   lib.rs           current entrypoint + lifecycle wiring
   persistence.rs   working high-level serialization example
-  sample_hooks.rs  feature-gated hook examples
+  sample_hooks.rs  sample hook examples you can wire in when ready
 build.rs           DLL resource metadata
-Cargo.toml         package metadata, runtime features, optional examples
+Cargo.toml         package metadata and runtime selection
 rust-toolchain.toml pinned stable toolchain + MSVC target for IDEs
 .cargo/config.toml default cargo target for rust-analyzer / RustRover
 ```
@@ -208,7 +208,7 @@ Supported attributed hooks:
 - `#[hooks::vcall_hook]`
 
 Important features:
-- typed arguments like `&T`, `GameRef<'_, T>`, `Resolved<T>`
+- typed arguments like `&T`, `Option<&T>`, `&mut T`, and `Resolved<T>`
 - `Original<fn(...) -> ...>`
 - guard presets via `hooks::guards::*`
 - batch installation via `hooks::install_all![...]`
@@ -218,7 +218,7 @@ Example high-level call hook:
 ```rust
 use libskyrim::re::Actor;
 use libskyrim::relocation::{RelocationID, VariantOffset};
-use libskyrim::sdk::hooks::{self, GameRef, Original};
+use libskyrim::sdk::hooks::{self, Original};
 
 #[hooks::call_hook(
     target = RelocationID::new(123, 456),
@@ -227,8 +227,8 @@ use libskyrim::sdk::hooks::{self, GameRef, Original};
     guard = hooks::guards::original(),
 )]
 fn patch_call(
-    original: Original<fn(GameRef<'_, Actor>, u32)>,
-    actor: GameRef<'_, Actor>,
+    original: Original<fn(&Actor, u32)>,
+    actor: &Actor,
     value: u32,
 ) {
     original.call(actor, value);
@@ -255,15 +255,11 @@ fn patch_player_update(
 }
 ```
 
-The template includes two feature-gated examples in `src/sample_hooks.rs`:
+The template includes two worked examples in `src/sample_hooks.rs`:
 - a `call_hook` adaptation of `ApplyAttackSpells`
 - a `vtable_hook` on `PlayerCharacter` using the inherited `Actor::VFUNC_UPDATE` slot
 
-Enable it only when you intentionally want the sample hook compiled and installed:
-
-```powershell
-cargo build --release --target x86_64-pc-windows-msvc --features example-hooks
-```
+Wire them in intentionally after you replace addresses and behavior for your own plugin.
 
 ### `sdk::plugin::serialization`
 
@@ -347,7 +343,7 @@ Use these when the attribute SDK layer is too restrictive or you need exact raw 
 
 ## Example Hook in This Template
 
-`src/sample_hooks.rs` contains two feature-gated hook examples:
+`src/sample_hooks.rs` contains two hook examples:
 - a high-level call-hook adaptation of this CommonLib-style pattern:
 - hook one specific call site
 - if `InventoryEntryData*` is null, synthesize fallback data
@@ -358,7 +354,7 @@ Together they show:
 - `#[hooks::call_hook(...)]`
 - `#[hooks::vtable_hook(...)]`
 - `Original<fn(...)>`
-- `GameRef<'_, Actor>`
+- `Resolved<Actor>`
 - `Option<&mut InventoryEntryData>`
 - `VariantOffset`
 - `RelocationID`
@@ -388,6 +384,6 @@ Treat this as a worked example, not as a universal production hook. Replace addr
 
 ## Notes
 
-- The template is working by default without the example hook feature.
-- `example-hooks` is intentionally opt-in because real hook addresses are always plugin-specific.
+- The template is working by default without installing the sample hooks.
+- The sample hooks are reference code only; real hook addresses and behavior are always plugin-specific.
 - If you target VR too, audit every hook target and every runtime-specific offset before enabling VR builds.
