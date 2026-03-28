@@ -1,320 +1,393 @@
-# RustSKSETemplate
+﻿# RustSKSETemplate
 
-A template for writing [SKSE](https://skse.silverlock.org/) plugins for **The Elder Scrolls V: Skyrim** entirely in Rust, powered by [CommonLib-SkyrimLib](https://github.com/Newrite/CommonLib-SkyrimLib/tree/CommonLib-LibSkyrim) — a Rust port of CommonLibSSE-NG.
+A current template for SKSE plugins built on the modern `libskyrim` high-level SDK.
 
-Supports **SE (1.5.97)**, **AE (1.6.x+)**, and **VR** runtimes.
+This template is intentionally updated for the current realities of `libskyrim`:
+- current `SKSEPlugin_Version` declaration via `plugin_declaration!`
+- current Rust entrypoint ABI via `skse_plugin_rust_entry(&LoadInterface)`
+- high-level plugin lifecycle and SKSE messaging through `sdk::plugin`
+- high-level hooks through `sdk::hooks`
+- high-level events through `sdk::events`
+- high-level cosave persistence through `sdk::plugin::serialization`
+- low-level escape hatches still available through `skse`, `relocation`, and raw hook macros
+
+By default the template stays minimal and safe:
+- it initializes `libskyrim`
+- registers lifecycle callbacks
+- registers a working serialization model
+- does not install risky sample hooks unless you opt into the `example-hooks` feature
 
 ---
 
 ## Requirements
 
-- [Rust](https://rustup.rs/) (stable, MSVC toolchain)
-- MSVC Build Tools (Visual Studio 2022 or standalone) with C++23 and later
-- [xmake](https://xmake.io/) >= 3.0.0 — builds the C++ CommonLibSSE-NG bridge
+- Rust stable with `x86_64-pc-windows-msvc`
+- MSVC build tools
+- `xmake`
 - Git
 
-### Install xmake
-
-```shell
-winget install xmake
-# or
-scoop install xmake
-```
-
-### Install the MSVC Rust target
-
-```shell
+```powershell
 rustup target add x86_64-pc-windows-msvc
+winget install xmake
 ```
 
 ---
 
 ## Quick Start
 
-```shell
+```powershell
 git clone https://github.com/Newrite/RustSKSETemplate
 cd RustSKSETemplate
 cargo build --release --target x86_64-pc-windows-msvc
 ```
 
 Output DLL:
-```
-target/x86_64-pc-windows-msvc/release/<PluginName>.dll
+
+```text
+target/x86_64-pc-windows-msvc/release/RustSKSETemplate.dll
 ```
 
-Copy to `Data/SKSE/Plugins/` in your Skyrim directory.
+Copy it to `Data/SKSE/Plugins/`.
 
 ---
 
-## Skyrim Runtime Target (Features)
+## Runtime Features
 
-The `libskyrim` dependency must be told which Skyrim runtime(s) to target.
-This controls which version of CommonLibSSE-NG gets compiled by xmake.
-
-In `Cargo.toml`, set the `features` field on the `libskyrim` dependency:
+In `Cargo.toml`:
 
 ```toml
 [dependencies]
-# SE + AE (default — universal plugin)
 libskyrim = { git = "https://github.com/Newrite/CommonLib-SkyrimLib.git", branch = "CommonLib-LibSkyrim", features = ["se", "ae"] }
-
-# AE only
-libskyrim = { git = "...", branch = "CommonLib-LibSkyrim", features = ["ae"] }
-
-# SE only (1.5.97)
-libskyrim = { git = "...", branch = "CommonLib-LibSkyrim", features = ["se"] }
-
-# VR only
-libskyrim = { git = "...", branch = "CommonLib-LibSkyrim", features = ["vr"] }
 ```
 
-| Feature | Runtime |
-|---|---|
-| `se` | Special Edition 1.5.97 |
-| `ae` | Anniversary Edition 1.6.x+ |
-| `vr` | Skyrim VR |
+Typical choices:
+- `features = ["se", "ae"]` for one universal SE/AE build
+- `features = ["ae"]` for AE-only
+- `features = ["se"]` for 1.5.97-only
+- `features = ["vr"]` for VR-only
 
-> **Note:** These features are passed through to xmake as `--skyrim_se=y/n`, `--skyrim_ae=y/n`, `--skyrim_vr=y/n` during the C++ build step.
+If you add real hook targets, make sure their relocation IDs and offsets are valid for every runtime you enable.
 
 ---
 
-## Build
+## Project Layout
 
-```shell
-# Release — optimized, stripped (for distribution)
-cargo build --release --target x86_64-pc-windows-msvc
-
-# Debug — unoptimized, with debug symbols (for development)
-cargo build --target x86_64-pc-windows-msvc
-```
-
-> There is no `--dev` flag in cargo. Omitting `--release` uses the `dev` profile automatically.
-
----
-
-## Update libskyrim
-
-```shell
-cargo update -p libskyrim
-```
-
----
-
-## Plugin Configuration (`src/lib.rs`)
-
-### Version Declaration
-
-```rust
-libskyrim::plugin_api::plugin_version_data! {
-    author:           "YourName",
-    email:            "you@example.com",
-    version_indep_ex: SksePluginVersionData::VINDEPEX_NO_STRUCT_USE,
-    version_indep:    SksePluginVersionData::VINDEP_ADDRESS_LIBRARY_POST_AE,
-    compat_versions:  []
-}
-```
-
-| Field | Description |
-|---|---|
-| `author` | Your name shown in SKSE logs |
-| `email` | Contact email |
-| `version_indep_ex` | `VINDEPEX_NO_STRUCT_USE` — plugin does not use SKSE structs directly |
-| `version_indep` | `VINDEP_ADDRESS_LIBRARY_POST_AE` — uses Address Library, compatible with all post-AE versions |
-| `compat_versions` | Restrict to specific game versions, or `[]` for all |
-
-### Entry Point
-
-```rust
-#[no_mangle]
-pub fn skse_plugin_rust_entry(skse: &SkseInterface) -> Result<(), ()> {
-    // Your initialization code
-    Ok(())   // return Err(()) to abort plugin load
-}
-```
-
-### SKSE Message Listeners
-
-```rust
-register_listener(Message::SKSE_DATA_LOADED, on_skse_message);
-```
-
-| Message | When |
-|---|---|
-| `SKSE_POST_LOAD` | All plugins loaded |
-| `SKSE_POST_POST_LOAD` | After PostLoad of all plugins |
-| `SKSE_INPUT_LOADED` | Input system ready |
-| `SKSE_DATA_LOADED` | Game data fully loaded — **main initialization point** |
-| `SKSE_PRE_LOAD_GAME` | Before loading a save |
-| `SKSE_POST_LOAD_GAME` | After loading a save |
-| `SKSE_SAVE_GAME` | On save |
-| `SKSE_NEW_GAME` | New game started |
-
-### Runtime Detection
-
-```rust
-use libskyrim::runtime::{CURRENT_VERSION, is_ae, is_se, is_vr};
-
-skse_message!("Skyrim version: {}", *CURRENT_VERSION);
-if is_ae() { /* AE-specific code */ }
-if is_se() { /* SE-specific code */ }
-if is_vr() { /* VR-specific code */ }
-```
-
-### Logging
-
-```rust
-skse_message!("Info: {}", value);   // [INFO]
-skse_warning!("Warn: {}", value);   // [WARN]
-skse_fatal!("Fatal: {}", value);    // [FATAL]
-```
-
----
-
-## Build Profiles
-
-| Profile | Command | LTO | Opt | Strip | Use for |
-|---|---|---|---|---|---|
-| `release` | `cargo build --release` | fat | z | yes | Distribution |
-| `dev` | `cargo build` | off | 0 | no | Development |
-
----
-
-## Project Structure
-
-```
+```text
 src/
-  lib.rs       ← Entry point, version data, message listeners
-build.rs       ← DLL linker flags, Windows version resource embedding
-Cargo.toml     ← Plugin name, version, libskyrim dependency + features
+  lib.rs           current entrypoint + lifecycle wiring
+  persistence.rs   working high-level serialization example
+  sample_hooks.rs  feature-gated hook examples
+build.rs           DLL resource metadata
+Cargo.toml         package metadata, runtime features, optional examples
+rust-toolchain.toml pinned stable toolchain + MSVC target for IDEs
+.cargo/config.toml default cargo target for rust-analyzer / RustRover
 ```
 
 ---
 
-## Hooks
+## Current Entry Point
 
-Install hooks inside the `SKSE_DATA_LOADED` handler — at that point all game
-data and vtables are fully initialized and safe to patch.
+The template uses the current `libskyrim` ABI:
 
 ```rust
-fn on_skse_message(msg: &Message) {
-    match msg.msg_type {
-        Message::SKSE_DATA_LOADED => {
-            hooks::install_hooks();
-        }
-        _ => {}
+#[unsafe(no_mangle)]
+pub unsafe fn skse_plugin_rust_entry(skse: &LoadInterface) -> Result<(), ()> {
+    plugin::init(skse);
+    plugin::set_level(LogLevel::Info);
+    Ok(())
+}
+```
+
+`plugin::init(skse)` is the normal high-level bootstrap path. After that you can use SDK lifecycle, events, hooks, tasks, and serialization helpers.
+
+## IDE Notes
+
+The template is set up to behave better in RustRover and VSCode:
+- `crate-type = ["cdylib", "rlib"]` keeps the final plugin output while also giving the IDE a normal Rust library target to analyze
+- `rust-toolchain.toml` pins stable and adds `x86_64-pc-windows-msvc`
+- `.cargo/config.toml` makes the MSVC target the default for cargo-based analysis
+
+If IntelliSense still looks stale after pulling template updates:
+- reopen the project root
+- run `cargo check`
+- refresh the Rust toolchain / cargo workspace in the IDE
+
+The plugin version export is also current:
+
+```rust
+libskyrim::plugin_declaration! {
+    version: Version::new(0, 1, 0, 0),
+    name: "RustSKSETemplate",
+    author: "YourName",
+    support_email: "you@example.com",
+    struct_compatibility: StructCompatibility::Independent,
+    runtime_compatibility: RuntimeCompatibility::from_version_independence(
+        VersionIndependence::AddressLibrary,
+        false,
+    ),
+    minimum_skse_version: Version::new(0, 0, 0, 0),
+}
+```
+
+---
+
+## High-Level SDK Surfaces
+
+### `sdk::plugin`
+
+Use this for the common bootstrap workflow.
+
+Available in practice:
+- `plugin::init(...)`
+- `plugin::init_with_log(...)`
+- `plugin::alloc_trampoline(...)`
+- `plugin::set_level(...)`
+- `plugin::add_task(...)`
+- `plugin::add_ui_task(...)`
+- lifecycle helpers such as:
+  - `plugin::on_post_load(...)`
+  - `plugin::on_input_loaded(...)`
+  - `plugin::on_data_loaded(...)`
+  - `plugin::on_pre_load_game(...)`
+  - `plugin::on_post_load_game(...)`
+  - `plugin::on_save_game(...)`
+  - `plugin::on_delete_game(...)`
+  - `plugin::on_new_game(...)`
+
+The template already wires these in `src/lib.rs`.
+
+### `sdk::events`
+
+Use this for engine and SKSE event domains.
+
+Available domains:
+- `sdk::events::game`
+- `sdk::events::ui`
+- `sdk::events::input`
+- `sdk::events::source`
+- `sdk::events::skse::dispatchers`
+- `sdk::events::skse::messages`
+- `sdk::events::bus`
+
+Useful pieces:
+- `EventBatch`
+- `EventFlow`
+- `install_all!(&mut batch, ...)`
+- attribute events:
+  - `#[events::game_event]`
+  - `#[events::ui_event]`
+  - `#[events::dispatcher_event]`
+  - `#[events::input_event]`
+  - `#[events::message_event]`
+  - `#[events::bus_event]`
+
+Example input event:
+
+```rust
+use libskyrim::sdk::events::{self, InputEvents};
+
+#[events::input_event(prepend)]
+fn on_input(mut events: InputEvents<'_>) {
+    for button in events.keyboard_mut() {
+        let _ = button;
+    }
+}
+
+let mut batch = events::EventBatch::new();
+events::install_all!(&mut batch, on_input_event)?;
+```
+
+### `sdk::hooks`
+
+This is the modern high-level hook layer.
+
+Supported attributed hooks:
+- `#[hooks::function_hook]`
+- `#[hooks::call_hook]`
+- `#[hooks::vtable_hook]`
+- `#[hooks::vcall_hook]`
+
+Important features:
+- typed arguments like `&T`, `GameRef<'_, T>`, `Resolved<T>`
+- `Original<fn(...) -> ...>`
+- guard presets via `hooks::guards::*`
+- batch installation via `hooks::install_all![...]`
+
+Example high-level call hook:
+
+```rust
+use libskyrim::re::Actor;
+use libskyrim::relocation::{RelocationID, VariantOffset};
+use libskyrim::sdk::hooks::{self, GameRef, Original};
+
+#[hooks::call_hook(
+    target = RelocationID::new(123, 456),
+    offset = VariantOffset::new(0x15, 0x18, 0x15),
+    size = 5,
+    guard = hooks::guards::original(),
+)]
+fn patch_call(
+    original: Original<fn(GameRef<'_, Actor>, u32)>,
+    actor: GameRef<'_, Actor>,
+    value: u32,
+) {
+    original.call(actor, value);
+}
+```
+
+Example high-level vtable hook on the player update slot:
+
+```rust
+use libskyrim::re::{Actor, PlayerCharacter};
+use libskyrim::sdk::hooks::{self, Original};
+
+#[hooks::vtable_hook(
+    vtable = PlayerCharacter::VTABLE[0],
+    offset = Actor::VFUNC_UPDATE,
+    guard = hooks::guards::original(),
+)]
+fn patch_player_update(
+    original: Original<fn(&mut PlayerCharacter, f32)>,
+    player: &mut PlayerCharacter,
+    delta: f32,
+) {
+    original.call(player, delta);
+}
+```
+
+The template includes two feature-gated examples in `src/sample_hooks.rs`:
+- a `call_hook` adaptation of `ApplyAttackSpells`
+- a `vtable_hook` on `PlayerCharacter` using the inherited `Actor::VFUNC_UPDATE` slot
+
+Enable it only when you intentionally want the sample hook compiled and installed:
+
+```powershell
+cargo build --release --target x86_64-pc-windows-msvc --features example-hooks
+```
+
+### `sdk::plugin::serialization`
+
+This is the high-level cosave API.
+
+The template already uses it in `src/persistence.rs`.
+
+It provides:
+- `Model`
+- `register_model::<T>()`
+- `schema_fields!`
+- `record_id!(...)`
+- `unique_id!(...)`
+- `Cosave`, `CosaveEncode`, `CosaveDecode`
+- container support such as `Vec<T>`, `BoundedVec<T, N>`, `BTreeMap<K, V>`
+
+Current template example:
+
+```rust
+#[derive(Debug, Default, Cosave)]
+pub struct SaveState {
+    pub save_counter: u32,
+    pub runtime_events: u32,
+}
+
+impl Model for SaveState {
+    const UNIQUE_ID: serialization::UniqueId = serialization::unique_id!("RSTT");
+
+    fn schema(schema: &mut Schema<Self>) {
+        serialization::schema_fields!(schema, {
+            serialization::record_id!("SAVE") => 1 => save_counter,
+            serialization::record_id!("EVNT") => 1 => runtime_events,
+        });
     }
 }
 ```
 
 ---
 
-### VTable Hook
+## Low-Level Surfaces Still Available
 
-Replaces a virtual function in a class vtable. The original function is saved
-and can be called via `original(...)`.
+The template is oriented toward the SDK, but the raw layers are still there when needed.
+
+### Raw SKSE / relocation layer
+
+You can still use:
+- `libskyrim::skse::*`
+- `libskyrim::relocation::*`
+- raw trampoline allocation
+- low-level registration families
+- low-level raw message registration
+
+### Raw hook escape hatch
+
+For unsupported or intentionally low-level cases you still have:
+- `hook! { function ... }`
+- `hook! { detour ... }`
+- `hook! { call ... }`
+- `hook! { vcall ... }`
+- `hook! { vtable ... }`
+- legacy `define_call_hook!` / `define_vtable_hook!`
+
+Example raw low-level call hook:
 
 ```rust
-use libskyrim::re::character::Character;
-use libskyrim::re::player_character::PlayerCharacter;
-use libskyrim::{skse_message, define_vtable_hook};
-use libskyrim::trampoline::alloc_trampoline;
-
-define_vtable_hook! {
-    pub NpcUpdateHook {
-        vtable: Character::VTABLE,
-        offset: Character::VFUNC_UPDATE_IDX,
-        fn hook(this: *mut Character, delta: f32) {
-            skse_message!("NPC update, delta: {}", delta);
-            original(this, delta); // call original — always do this unless intentionally blocking
+libskyrim::hook! {
+    pub call SomeSite {
+        target: RelocationID::new(123, 456),
+        offset: VariantOffset::new(0x15, 0x18, 0x15),
+        size: 5,
+        fn detour(arg1: *mut SomeType, arg2: u32) {
+            original(arg1, arg2)
         }
     }
 }
-
-define_vtable_hook! {
-    pub PlayerUpdateHook {
-        vtable: PlayerCharacter::VTABLE,
-        offset: PlayerCharacter::VFUNC_UPDATE_IDX,
-        fn hook(this: *mut PlayerCharacter, delta: f32) {
-            skse_message!("Player update, delta: {}", delta);
-            original(this, delta);
-        }
-    }
-}
-
-pub fn install_hooks() {
-    alloc_trampoline(128); // allocate trampoline memory before installing hooks
-    NpcUpdateHook::install();
-    PlayerUpdateHook::install();
-}
 ```
 
-**`define_vtable_hook!` parameters:**
-
-| Parameter | Description |
-|---|---|
-| `vtable` | VTable address — `SomeClass::VTABLE[0]` (index 0 = primary vtable) |
-| `offset` | Virtual function index — `SomeClass::VFUNC_NAME_IDX` constant |
-| `fn hook(...)` | Your hook function — signature must match the original exactly |
-| `original(...)` | Calls the original function saved before patching |
+Use these when the attribute SDK layer is too restrictive or you need exact raw ABI control.
 
 ---
 
-### Call Hook (Trampoline)
+## Example Hook in This Template
 
-Patches a `CALL` instruction inside an existing function at a specific offset.
-Use when you need to intercept a specific call site, not the whole virtual method.
+`src/sample_hooks.rs` contains two feature-gated hook examples:
+- a high-level call-hook adaptation of this CommonLib-style pattern:
+- hook one specific call site
+- if `InventoryEntryData*` is null, synthesize fallback data
+- otherwise pass the original argument through
+- a `PlayerCharacter` vtable hook on the inherited `Actor::Update(float)` slot
 
-```rust
-use libskyrim::{skse_message, define_call_hook};
-use libskyrim::relocation::VariantID;
-use libskyrim::trampoline::alloc_trampoline;
+Together they show:
+- `#[hooks::call_hook(...)]`
+- `#[hooks::vtable_hook(...)]`
+- `Original<fn(...)>`
+- `GameRef<'_, Actor>`
+- `Option<&mut InventoryEntryData>`
+- `VariantOffset`
+- `RelocationID`
+- inherited vtable offsets like `Actor::VFUNC_UPDATE`
+- concrete vtable targets like `PlayerCharacter::VTABLE[0]`
 
-define_call_hook! {
-    pub MyCallHook {
-        address: VariantID::new(37633, 38586, 0), // SE id, AE id, VR id
-        offset: 0x3A,                              // byte offset of the CALL instruction
-        size: 5,                                   // 5 = short CALL, 6 = long CALL
-        fn hook(arg1: *mut SomeType, arg2: u32) -> bool {
-            skse_message!("Call hook fired");
-            original(arg1, arg2) // call original at hook site
-        }
-    }
-}
+The sample uses these addresses:
+- containing function: `RelocationID::new(37673, 38627)`
+- call-site offset: `VariantOffset::new(0x185, 0x194, 0x185)`
+- player update vtable slot: `Actor::VFUNC_UPDATE`
 
-pub fn install_hooks() {
-    alloc_trampoline(64);
-    MyCallHook::install();
-}
-```
-
-**`define_call_hook!` parameters:**
-
-| Parameter | Description |
-|---|---|
-| `address` | `VariantID` of the **containing function** (not the call target) |
-| `offset` | Byte offset of the `CALL` instruction within that function |
-| `size` | `5` for a standard near call, `6` for a call with REX prefix |
-| `fn hook(...)` | Your hook — signature must match the called function exactly |
+Treat this as a worked example, not as a universal production hook. Replace addresses and fallback logic for your own plugin.
 
 ---
 
-### `alloc_trampoline(size)`
+## Suggested Workflow
 
-Must be called **once** before any `install()` calls. Allocates a memory region
-near the game executable for trampoline stubs used by call/branch hooks.
-
-```rust
-alloc_trampoline(128); // size in bytes — 64–256 is typical
-```
-
-VTable hooks do not use the trampoline, but calling `alloc_trampoline` before
-all hooks is the safe convention.
+1. Rename the crate and plugin metadata in `Cargo.toml`, `build.rs`, and `src/lib.rs`.
+2. Keep `src/lib.rs` small: bootstrap, logging, lifecycle wiring.
+3. Put persistence in `src/persistence.rs`.
+4. Put real hooks into their own modules.
+5. Install hooks from `on_data_loaded(...)` unless a different lifecycle phase is clearly required.
+6. Prefer `sdk::hooks` / `sdk::events` / `sdk::plugin::serialization` first.
+7. Drop to raw `skse` / `relocation` only when the SDK layer is too narrow.
 
 ---
 
-### Hook Types Summary
+## Notes
 
-| Macro | Use case |
-|---|---|
-| `define_vtable_hook!` | Override a virtual method for all instances of a class |
-| `define_call_hook!` | Intercept a specific `CALL` instruction inside a function |
+- The template is working by default without the example hook feature.
+- `example-hooks` is intentionally opt-in because real hook addresses are always plugin-specific.
+- If you target VR too, audit every hook target and every runtime-specific offset before enabling VR builds.

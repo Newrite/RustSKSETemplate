@@ -1,27 +1,36 @@
 [package]
-name        = "RustSKSETemplate"
-version     = "0.1.0"
-edition     = "2021"
-authors     = ["Name"]
-description = "Some mode desc"
-
+name = "rust-skse-template"
+version = "0.1.0"
+edition = "2024"
+description = "Modern Rust SKSE plugin template for libskyrim"
+authors = ["Your Name"]
+license = "MIT"
+publish = false
 
 [lib]
-name       = "RustSKSETemplate"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+example-hooks = []
 
 [dependencies]
-libskyrim = { git = "https://github.com/Newrite/CommonLib-SkyrimLib.git", branch = "CommonLib-LibSkyrim", features = ["se", "ae"] }
+libskyrim = { git = "https://github.com/Newrite/CommonLib-SkyrimLib.git", branch = "CommonLib-LibSkyrim", features = [
+    "se",
+    "ae",
+] }
 
 [build-dependencies]
-winresource = "0.1.31"
+winresource = "0.1"
 
 [profile.release]
-panic         = "abort"
-lto           = "fat"
+panic = "abort"
 codegen-units = 1
-opt-level     = "z"
-strip         = true
+lto = true
+opt-level = 3
+strip = true
 
-[profile.dev]
-panic         = "abort"
+[package.metadata.winres]
+OriginalFilename = "RustSKSETemplate.dll"
+ProductName = "Rust SKSE Template"
+FileDescription = "Modern Rust SKSE plugin template powered by libskyrim"
